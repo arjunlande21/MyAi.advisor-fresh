@@ -1,0 +1,3 @@
+We specialize in ethical AI adoption for enterprises.
+Our framework includes bias detection, data privacy compliance, and explainable AI models.
+Recent clients in healthcare and finance have used this to pass audits and build customer trust.

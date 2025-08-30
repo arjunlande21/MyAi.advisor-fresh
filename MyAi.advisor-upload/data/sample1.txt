@@ -1,0 +1,3 @@
+Our AI team helped a retail client reduce cloud costs by 35% using predictive scaling models.
+We used historical usage data to forecast demand and auto-adjust resources.
+The solution was deployed using CI/CD pipelines and monitored for 6 months with consistent savings.

@@ -1,0 +1,7 @@
+langchain
+langchain-community
+chromadb
+sentence-transformers
+streamlit
+ctransformers
+pydantic==1.10.9
