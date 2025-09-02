@@ -1,4 +1,4 @@
-# iQvault.ai 🔒
+# iQvault.ai 🧠
 
 **Your documents. Now intelligent.**
 
@@ -110,3 +110,4 @@ This app includes **anonymous usage tracking** to help improve it.
 License
 
 MIT — use, modify, and share freely.
+
