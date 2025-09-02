@@ -1,6 +1,12 @@
 # app.py
 import streamlit as st
 import os
+import json
+import requests
+import uuid
+import platform
+import threading
+from pathlib import Path
 from langchain_community.document_loaders import TextLoader
 from langchain_community.document_loaders import Docx2txtLoader
 from PyPDF2 import PdfReader
@@ -13,67 +19,116 @@ from langchain_core.language_models.llms import LLM
 from ctransformers import AutoModelForCausalLM as CTransformersModel
 from typing import Any
 
-# Page setup
-st.set_page_config(page_title="MyAi.advisor", page_icon="🧠")
-st.title("🧠 MyAi.advisor")
-st.markdown("AI-powered knowledge assistant for enterprise teams")
+# --- Helper: Get correct path when bundled with PyInstaller ---
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = Path(sys._MEIPASS)
+    except Exception:
+        base_path = Path(".")
+    return base_path / relative_path
 
-# Load documents from all supported formats
+# Import sys only after defining resource_path (used inside it)
+import sys
+
+# --- Anonymous Usage Analytics (Opt-Out) ---
+TRACKING_ENABLED = True
+TRACKING_ENDPOINT = "https://webhook.site/b3bf5aa1-0aa5-4349-9507-57dcabe15423"
+DATA_FILE = Path(__file__).parent / ".telemetry.json"
+
+def send_telemetry():
+    if not TRACKING_ENABLED:
+        return
+    try:
+        if DATA_FILE.exists():
+            try:
+                with DATA_FILE.open('r', encoding='utf-8') as f:
+                    user_id = json.load(f).get("user_id")
+            except:
+                user_id = str(uuid.uuid4())
+                with DATA_FILE.open('w', encoding='utf-8') as f:
+                    json.dump({"user_id": user_id}, f)
+        else:
+            user_id = str(uuid.uuid4())
+            with DATA_FILE.open('w', encoding='utf-8') as f:
+                json.dump({"user_id": user_id}, f)
+
+        payload = {
+            "id": user_id,
+            "os": platform.system(),
+            "version": "1.0",
+            "app": "iQvault.ai",
+            "python_version": platform.python_version()
+        }
+
+        def send():
+            try:
+                requests.post(TRACKING_ENDPOINT, json=payload, timeout=2)
+            except:
+                pass
+
+        thread = threading.Thread(target=send, daemon=True)
+        thread.start()
+    except:
+        pass
+
+if "telemetry_sent" not in st.session_state:
+    send_telemetry()
+    st.session_state.telemetry_sent = True
+
+# Page setup
+st.set_page_config(page_title="iQvault.ai", page_icon="🔒")
+st.title("🔒 iQvault.ai")
+st.markdown("AI-powered knowledge assistant — Secure, Offline, Intelligent.")
+
+# Load documents
 def load_docs():
     docs = []
-    data_path = "data"
+    data_path = resource_path("data")
     
-    if not os.path.exists(data_path):
-        raise FileNotFoundError(f"Data folder not found: {data_path}")
-    
-    for file in os.listdir(data_path):
-        file_path = os.path.join(data_path, file)
-        file_ext = file.lower().split(".")[-1]
-        
-        # .txt
-        if file_ext == "txt":
-            loader = TextLoader(file_path, encoding="utf-8")
-            docs.extend(loader.load())
-        
-        # .docx
-        elif file_ext == "docx":
-            loader = Docx2txtLoader(file_path)
-            docs.extend(loader.load())
-        
-        # .pdf
-        elif file_ext == "pdf":
-            try:
+    if not data_path.exists():
+        st.error(f"Data folder not found: {data_path.resolve()}")
+        return []
+
+    for file in data_path.iterdir():
+        if not file.is_file():
+            continue
+        file_ext = file.suffix.lower()
+        file_path = str(file)
+
+        try:
+            if file_ext == ".txt":
+                loader = TextLoader(file_path, encoding="utf-8")
+                docs.extend(loader.load())
+            elif file_ext == ".docx":
+                loader = Docx2txtLoader(file_path)
+                docs.extend(loader.load())
+            elif file_ext == ".pdf":
                 reader = PdfReader(file_path)
                 text = ""
                 for page in reader.pages:
                     text += page.extract_text() or ""
-                docs.append({"page_content": text, "metadata": {"source": file}})
-            except Exception as e:
-                st.warning(f"Could not read PDF: {file} | Error: {str(e)}")
-        
-        # .pptx
-        elif file_ext == "pptx":
-            try:
+                docs.append({"page_content": text, "metadata": {"source": file.name}})
+            elif file_ext == ".pptx":
                 prs = Presentation(file_path)
                 text = ""
                 for slide in prs.slides:
                     for shape in slide.shapes:
                         if hasattr(shape, "text"):
                             text += shape.text + "\n"
-                docs.append({"page_content": text, "metadata": {"source": file}})
-            except Exception as e:
-                st.warning(f"Could not read PPTX: {file} | Error: {str(e)}")
-    
+                docs.append({"page_content": text, "metadata": {"source": file.name}})
+        except Exception as e:
+            st.warning(f"Skipped {file.name} | Error: {str(e)}")
+
     if not docs:
-        raise ValueError("No documents loaded. Check your data folder and file formats.")
-    
+        st.warning("No documents loaded. Add files to the 'data' folder.")
     return docs
 
-# Split text into chunks
+# Vector store
 @st.cache_resource
 def get_vectorstore():
     docs = load_docs()
-    # Convert dict to LangChain Document if needed
     from langchain.schema import Document
     formatted_docs = [
         Document(page_content=d["page_content"], metadata=d.get("metadata", {})) 
@@ -85,7 +140,7 @@ def get_vectorstore():
     embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
     return Chroma.from_documents(texts, embedding=embeddings)
 
-# Custom LLM wrapper for ctransformers
+# Custom LLM wrapper
 class CTransformersLLM(LLM):
     model: Any
 
@@ -96,19 +151,37 @@ class CTransformersLLM(LLM):
     def _call(self, prompt: str, **kwargs) -> str:
         return self.model(prompt)
 
-# Load LLM locally
+# Load LLM
 @st.cache_resource
 def get_llm():
-    model = CTransformersModel.from_pretrained(
-        r"D:\Documents\MY PROJECTS\Personal Projects\MyAi.advisor\model\tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
-        model_type="llama",
-        max_new_tokens=200,
-        temperature=0.3,
-        context_length=2048
-    )
-    return CTransformersLLM(model=model)
+    model_file = "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
+    model_path = resource_path("model") / model_file
 
-# Get the QA chain
+    if not model_path.exists():
+        st.error(f"""
+❌ Model file not found:  
+`{model_path}`  
+
+Please download it from:  
+https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF  
+and place it in the 'model' folder.
+        """)
+        st.stop()
+
+    try:
+        model = CTransformersModel.from_pretrained(
+            str(model_path),
+            model_type="llama",
+            max_new_tokens=200,
+            temperature=0.3,
+            context_length=2048
+        )
+        return CTransformersLLM(model=model)
+    except Exception as e:
+        st.error(f"Failed to load model: {str(e)}")
+        st.stop()
+
+# QA Chain
 @st.cache_resource
 def get_qa_chain():
     llm = get_llm()
@@ -121,19 +194,7 @@ def get_qa_chain():
         return_source_documents=True
     )
 
-# Fix: Rename st_cache_resource to st.cache_resource
-@st.cache_resource
-def get_llm():
-    model = CTransformersModel.from_pretrained(
-        r"D:\Documents\MY PROJECTS\Personal Projects\MyAi.advisor\model\tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
-        model_type="llama",
-        max_new_tokens=200,
-        temperature=0.3,
-        context_length=2048
-    )
-    return CTransformersLLM(model=model)
-
-# Initialize QA chain
+# Initialize
 try:
     qa_chain = get_qa_chain()
 except Exception as e:
@@ -144,12 +205,10 @@ except Exception as e:
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Show chat history
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# Input from user
 if prompt := st.chat_input("Ask about our AI solutions..."):
     with st.chat_message("user"):
         st.markdown(prompt)
@@ -169,5 +228,6 @@ if prompt := st.chat_input("Ask about our AI solutions..."):
         st.markdown(answer)
         if sources:
             with st.expander("See source"):
-                st.write(sources[0].page_content[:500] + "..." if len(sources[0].page_content) > 500 else sources[0].page_content)
+                content = sources[0].page_content
+                st.write(content[:500] + "..." if len(content) > 500 else content)
     st.session_state.messages.append({"role": "assistant", "content": answer})
