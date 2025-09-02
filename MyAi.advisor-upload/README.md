@@ -101,5 +101,12 @@ GitHub: github.com/arjunlande21/iQvault.ai
 Have questions? Want to collaborate?
 Feel free to reach out!
 
+ 10. Usage Analytics
+This app includes **anonymous usage tracking** to help improve it.
+- Only OS and version are sent
+- No documents, questions, or personal data
+- You can disable it by editing `app.py`
+
 License
+
 MIT — use, modify, and share freely.
