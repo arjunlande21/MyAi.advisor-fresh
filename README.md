@@ -1,2 +1,2 @@
-# MyAi.advisor-fresh
-Clean version of MyAi.advisor — no large files
+# iQvault.ai-fresh
+Clean version of iQvault.ai — no large files
