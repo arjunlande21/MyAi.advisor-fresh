@@ -2,9 +2,8 @@
 
 **Your documents. Now intelligent.**
 
-An offline, secure AI assistant that reads your **PDFs, Word files, PowerPoint slides, and text files** — and answers questions like a human.
-
-No internet.  
+A secure AI assistant that reads your **PDFs, Word files, PowerPoint slides, and text files** — and answers questions like a human.
+  
 No cloud.  
 No data leaks.  
 Just answers — from your own documents.
